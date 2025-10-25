@@ -3,6 +3,10 @@ name: Build Tauri from Private Repository
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   # Tauri Windows 构建
   build-tauri-windows:
@@ -54,7 +58,9 @@ jobs:
       run: npm ci
     
     - name: Build Tauri app
-      run: npm run build:tauri
+      run: |
+        npm run generate
+        npm run tauri build -- --no-bundle
     
     - name: Delete old artifacts
       uses: actions/github-script@v7
@@ -84,10 +90,50 @@ jobs:
             }
           }
     
-    - name: Upload Tauri artifacts
+    - name: Upload Tauri executable
       uses: actions/upload-artifact@v4
       with:
         name: SR-Tools-${{ steps.get-version.outputs.version }}
-        path: src-tauri/target/release/bundle/
+        path: src-tauri/target/release/SR-Tools.exe
         retention-days: 30
         overwrite: true
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.get-version.outputs.version }}
+        release_name: SR-Tools v${{ steps.get-version.outputs.version }}
+        body: |
+          🎮 Star Rail Tools v${{ steps.get-version.outputs.version }}
+          
+          ## 下载
+          - Windows: [SR-Tools.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get-version.outputs.version }}/SR-Tools.exe)
+          
+          ## 更新内容
+          - 自动构建版本 v${{ steps.get-version.outputs.version }}
+          - 构建时间: ${{ github.run_id }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: src-tauri/target/release/SR-Tools.exe
+        asset_name: SR-Tools.exe
+        asset_content_type: application/octet-stream
+
+    # 清理旧的工作流运行记录
+    - name: 清理工作流运行历史
+      if: success() || failure()
+      uses: Mattraks/delete-workflow-runs@v2
+      with:
+        token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        retain_days: 0
+        keep_minimum_runs: 2  # 只保留最近2次运行记录
