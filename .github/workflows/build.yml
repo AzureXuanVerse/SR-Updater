@@ -1,0 +1,120 @@
+name: Build from Private Repository
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. 检出当前公开仓库
+    - name: Checkout public repository
+      uses: actions/checkout@v4
+      with:
+        path: public-repo
+    
+    # 2. 检出私有仓库
+    - name: Checkout private repository
+      uses: actions/checkout@v4
+      with:
+        repository: tianjg-com/SR-Tools              
+        token: ${{ secrets.SR_TOKEN }}    
+        path: private-repo
+        ref: main
+    
+    # 3. 设置 Node.js 环境
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: private-repo/package-lock.json
+    
+    # 4. 复制私有仓库文件到公开仓库
+    - name: Copy files from private repo
+      run: |
+        rsync -av --exclude='.git' private-repo/ public-repo/
+    
+    # 5. 安装依赖
+    - name: Install dependencies
+      run: |
+        cd public-repo
+        npm ci
+    
+    # 6. 构建 Nuxt.js 项目
+    - name: Build Nuxt.js project
+      run: |
+        cd public-repo
+        npm run generate
+    
+    # 7. 上传构建产物
+    - name: Upload web build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuxt-build
+        path: public-repo/.output/public/
+        retention-days: 30
+
+  # Tauri 多平台并行构建
+  build-tauri:
+    needs: build-web
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+            name: 'macos-arm64'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+            name: 'macos-x64'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            name: 'linux'
+          - platform: 'windows-latest'
+            args: ''
+            name: 'windows'
+    
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+    - name: Checkout private repository
+      uses: actions/checkout@v4
+      with:
+        repository: tianjg-com/SR-Tools
+        token: ${{ secrets.SR_TOKEN }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+    
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+    
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.platform == 'ubuntu-22.04'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Build Tauri app
+      run: npm run build:tauri -- ${{ matrix.args }}
+    
+    - name: Upload Tauri artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: tauri-${{ matrix.name }}
+        path: src-tauri/target/*/release/bundle/
+        retention-days: 30
