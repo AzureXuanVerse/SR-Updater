@@ -76,12 +76,32 @@ jobs:
         npm run tauri build
         
         echo "📦 检查生成的文件:"
-         if (Test-Path "src-tauri/target/release/bundle/updater") {
-           echo "✅ 更新包目录存在"
-           Get-ChildItem "src-tauri/target/release/bundle/updater" -Recurse | ForEach-Object { echo "  - $($_.Name)" }
-         } else {
-           echo "❌ 更新包目录不存在"
-         }
+        
+        # 检查 MSI 安装包和签名
+        if (Test-Path "src-tauri/target/release/bundle/msi/*.msi") {
+          echo "✅ MSI 安装包已生成"
+          Get-ChildItem "src-tauri/target/release/bundle/msi/*.msi" | ForEach-Object { echo "  - $($_.Name)" }
+        }
+        
+        if (Test-Path "src-tauri/target/release/bundle/msi/*.msi.sig") {
+          echo "✅ MSI 更新包签名已生成"
+          Get-ChildItem "src-tauri/target/release/bundle/msi/*.msi.sig" | ForEach-Object { echo "  - $($_.Name)" }
+        } else {
+          echo "❌ MSI 更新包签名未生成"
+        }
+        
+        # 检查 NSIS 安装包和签名
+        if (Test-Path "src-tauri/target/release/bundle/nsis/*.exe") {
+          echo "✅ NSIS 安装包已生成"
+          Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | ForEach-Object { echo "  - $($_.Name)" }
+        }
+        
+        if (Test-Path "src-tauri/target/release/bundle/nsis/*.exe.sig") {
+          echo "✅ NSIS 更新包签名已生成"
+          Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe.sig" | ForEach-Object { echo "  - $($_.Name)" }
+        } else {
+          echo "❌ NSIS 更新包签名未生成"
+        }
     
     - name: Verify build artifacts
       run: |
@@ -93,13 +113,17 @@ jobs:
           exit 1
         }
         
-        # 检查更新包文件是否存在
-        $updateFiles = Get-ChildItem "src-tauri/target/release/bundle/updater/" -Filter "*.tar.gz*" -ErrorAction SilentlyContinue
-        if ($updateFiles) {
-          echo "✅ 找到更新包文件:"
-          $updateFiles | ForEach-Object { echo "  - $($_.Name)" }
+        # 检查更新包签名文件是否存在
+        $msiSigFiles = Get-ChildItem "src-tauri/target/release/bundle/msi/" -Filter "*.sig" -ErrorAction SilentlyContinue
+        $nsisSigFiles = Get-ChildItem "src-tauri/target/release/bundle/nsis/" -Filter "*.sig" -ErrorAction SilentlyContinue
+        
+        if ($msiSigFiles -or $nsisSigFiles) {
+          echo "✅ 找到更新包签名文件:"
+          $msiSigFiles | ForEach-Object { echo "  - MSI: $($_.Name)" }
+          $nsisSigFiles | ForEach-Object { echo "  - NSIS: $($_.Name)" }
         } else {
-          echo "⚠️ 未找到更新包文件，请检查构建配置"
+          echo "❌ 未找到更新包签名文件，构建可能失败"
+          exit 1
         }
     
     - name: Delete old artifacts
