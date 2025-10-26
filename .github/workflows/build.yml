@@ -160,14 +160,12 @@ jobs:
         name: SR-Tools-${{ steps.get-version.outputs.version }}
         path: |
           src-tauri/target/release/tianjg_com.exe
-          src-tauri/target/release/bundle/updater/*.zip
-          src-tauri/target/release/bundle/updater/*.zip.sig
+          src-tauri/target/release/bundle/msi/*.msi
+          src-tauri/target/release/bundle/msi/*.msi.sig
+          src-tauri/target/release/bundle/nsis/*.exe
+          src-tauri/target/release/bundle/nsis/*.exe.sig
         retention-days: 30
         overwrite: true
-
-
-
-
 
     - name: Create Release
       id: create_release
@@ -182,7 +180,8 @@ jobs:
           
           ## 下载
           - Windows 可执行文件: [tianjg_com.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get-version.outputs.version }}/tianjg_com.exe)
-          - Tauri 更新包: 请查看 Release 附件中的 .zip 文件
+          - MSI 安装包: 请查看 Release 附件中的 .msi 文件
+          - NSIS 安装包: 请查看 Release 附件中的 .exe 文件
           
           ## 更新内容
           - 自动构建版本 v${{ steps.get-version.outputs.version }}
@@ -190,14 +189,16 @@ jobs:
           - 构建时间: ${{ github.run_id }}
           
           ## 技术信息
-          - 包含数字签名的更新包，支持安全的自动更新
-          - 兼容 Tauri 更新插件
-          - 保持原始文件名以确保签名验证正确
+          - 包含数字签名的更新包（.msi.sig 和 .exe.sig），支持安全的自动更新
+          - 兼容 Tauri v2 更新插件
+          - MSI 和 NSIS 安装包可直接用作更新包
           - 需要手动更新 config.json 中的签名和 URL 信息
         files: |
           src-tauri/target/release/tianjg_com.exe
-          src-tauri/target/release/bundle/updater/*.zip
-          src-tauri/target/release/bundle/updater/*.zip.sig
+          src-tauri/target/release/bundle/msi/*.msi
+          src-tauri/target/release/bundle/msi/*.msi.sig
+          src-tauri/target/release/bundle/nsis/*.exe
+          src-tauri/target/release/bundle/nsis/*.exe.sig
         draft: false
         prerelease: false
 
