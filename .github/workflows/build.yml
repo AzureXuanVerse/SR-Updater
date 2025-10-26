@@ -12,10 +12,6 @@ jobs:
   build-tauri-windows:
     runs-on: windows-latest
     
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-    
     steps:
     - name: Checkout private repository
       uses: actions/checkout@v4
@@ -61,30 +57,41 @@ jobs:
     - name: Install dependencies
       run: npm ci
     
-    - name: Build Tauri app
+    - name: Setup Tauri signing key
+      run: |
+        # 创建 .tauri 目录
+        New-Item -ItemType Directory -Force -Path "tools/.tauri"
+        
+        # 设置签名密钥（从 secrets 中获取）
+        echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" | Out-File -FilePath "tools/.tauri/sr.key" -Encoding utf8
+        echo "${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}" | Out-File -FilePath "tools/.tauri/sr.key.pub" -Encoding utf8
+        echo "${{ secrets.TAURI_KEY_PASSWORD }}" | Out-File -FilePath "tools/.tauri/密码.txt" -Encoding utf8
+    
+    - name: Build Tauri app with updater
+      env:
+        TAURI_SIGNING_PRIVATE_KEY_PATH: tools/.tauri/sr.key
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
       run: |
         npm run generate
         npm run tauri build
     
-    - name: Rename executable
+    - name: Verify build artifacts
       run: |
-        Copy-Item "src-tauri/target/release/tianjg_com.exe" "src-tauri/target/release/SR-Tools-v${{ steps.get-version.outputs.version }}.exe"
-
-    - name: Create MSI zip file
-      run: |
-        $VERSION = "${{ steps.get-version.outputs.version }}"
-        $MSI_FILE = Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Filter "*.msi" | Select-Object -First 1
-        if ($MSI_FILE) {
-          $MSI_ZIP_NAME = "SR-Tools_${VERSION}_x64.msi.zip"
-          Compress-Archive -Path $MSI_FILE.FullName -DestinationPath $MSI_ZIP_NAME -Force
-          echo "✅ 创建 MSI zip 文件: $MSI_ZIP_NAME"
-          echo "📁 MSI 文件路径: $($MSI_FILE.FullName)"
-          echo "📦 ZIP 文件大小: $((Get-Item $MSI_ZIP_NAME).Length) bytes"
+        # 检查可执行文件
+        if (Test-Path "src-tauri/target/release/tianjg_com.exe") {
+          echo "✅ 找到可执行文件: tianjg_com.exe"
         } else {
-          echo "❌ 未找到 MSI 文件"
-          echo "📁 Bundle 目录内容:"
-          Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse | ForEach-Object { echo $_.FullName }
+          echo "❌ 未找到可执行文件"
           exit 1
+        }
+        
+        # 检查更新包文件是否存在
+        $updateFiles = Get-ChildItem "src-tauri/target/release/bundle/updater/" -Filter "*.tar.gz*" -ErrorAction SilentlyContinue
+        if ($updateFiles) {
+          echo "✅ 找到更新包文件:"
+          $updateFiles | ForEach-Object { echo "  - $($_.Name)" }
+        } else {
+          echo "⚠️ 未找到更新包文件，请检查构建配置"
         }
     
     - name: Delete old artifacts
@@ -115,82 +122,20 @@ jobs:
             }
           }
     
-    - name: Upload Tauri executable
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SR-Tools-${{ steps.get-version.outputs.version }}
-        path: src-tauri/target/release/SR-Tools-v${{ steps.get-version.outputs.version }}.exe
+        path: |
+          src-tauri/target/release/tianjg_com.exe
+          src-tauri/target/release/bundle/updater/*.zip
+          src-tauri/target/release/bundle/updater/*.zip.sig
         retention-days: 30
         overwrite: true
 
-    - name: Generate update manifest
-      run: |
-        $VERSION = "${{ steps.get-version.outputs.version }}"
-        $PUB_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        
-        # 查找生成的签名文件
-        $BUNDLE_DIR = "src-tauri/target/release/bundle"
-        $MSI_ZIP_FILE = "SR-Tools_${VERSION}_x64.msi.zip"
-        
-        # 尝试多种可能的签名文件格式
-        $SIG_FILE = $null
-        $SIG_PATTERNS = @("*.sig", "*.msi.zip.sig", "*_${VERSION}_*.sig")
-        
-        foreach ($pattern in $SIG_PATTERNS) {
-          $SIG_FILE = Get-ChildItem -Path "$BUNDLE_DIR/msi" -Filter $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($SIG_FILE) {
-            echo "✅ 找到签名文件: $($SIG_FILE.Name) (模式: $pattern)"
-            break
-          }
-        }
-        
-        # 读取签名内容
-        $SIGNATURE = ""
-        if ($SIG_FILE) {
-          $SIGNATURE = Get-Content $SIG_FILE.FullName -Raw
-          $SIGNATURE = $SIGNATURE.Trim()
-          echo "📝 签名内容长度: $($SIGNATURE.Length) 字符"
-          echo "📝 签名内容预览: $($SIGNATURE.Substring(0, [Math]::Min(50, $SIGNATURE.Length)))..."
-        } else {
-          echo "⚠️ 未找到签名文件，将使用空签名"
-          echo "🔍 尝试的签名文件模式: $($SIG_PATTERNS -join ', ')"
-          # 列出所有文件以便调试
-          echo "📁 Bundle 目录内容:"
-          if (Test-Path $BUNDLE_DIR) {
-            Get-ChildItem -Path $BUNDLE_DIR -Recurse | ForEach-Object { echo "  $($_.FullName)" }
-          } else {
-            echo "  Bundle 目录不存在: $BUNDLE_DIR"
-          }
-        }
-        
-        # 验证 MSI ZIP 文件是否存在
-        if (Test-Path $MSI_ZIP_FILE) {
-          echo "✅ 找到 MSI ZIP 文件: $MSI_ZIP_FILE"
-          echo "📦 文件大小: $((Get-Item $MSI_ZIP_FILE).Length) bytes"
-        } else {
-          echo "❌ 未找到 MSI ZIP 文件: $MSI_ZIP_FILE"
-          exit 1
-        }
-        
-        # 生成更新清单 JSON
-        $updateManifest = @{
-          version = $VERSION
-          notes = "🎮 Star Rail Tools v$VERSION`n`n## 更新内容`n- 自动构建版本 v$VERSION`n- 构建时间: ${{ github.run_id }}`n- 修复已知问题`n- 性能优化"
-          pub_date = $PUB_DATE
-          platforms = @{
-            "windows-x86_64" = @{
-              signature = $SIGNATURE
-              url = "https://github.com/${{ github.repository }}/releases/download/v$VERSION/$MSI_ZIP_FILE"
-              with_elevated_task = $false
-            }
-          }
-        } | ConvertTo-Json -Depth 10
-        
-        # 保存到文件
-        $updateManifest | Out-File -FilePath "latest.json" -Encoding UTF8
-        
-        echo "📄 生成的更新清单:"
-        Get-Content "latest.json"
+
+
+
 
     - name: Create Release
       id: create_release
@@ -204,18 +149,23 @@ jobs:
           🎮 Star Rail Tools v${{ steps.get-version.outputs.version }}
           
           ## 下载
-          - Windows 可执行文件: [SR-Tools-v${{ steps.get-version.outputs.version }}.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get-version.outputs.version }}/SR-Tools-v${{ steps.get-version.outputs.version }}.exe)
-          - Windows 安装包: [SR-Tools_${{ steps.get-version.outputs.version }}_x64.msi.zip](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get-version.outputs.version }}/SR-Tools_${{ steps.get-version.outputs.version }}_x64.msi.zip)
+          - Windows 可执行文件: [tianjg_com.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get-version.outputs.version }}/tianjg_com.exe)
+          - Tauri 更新包: 请查看 Release 附件中的 .zip 文件
           
           ## 更新内容
           - 自动构建版本 v${{ steps.get-version.outputs.version }}
+          - 支持 Tauri 原生更新功能
           - 构建时间: ${{ github.run_id }}
-          - 支持 Tauri 自动更新
-          - 修复已知问题
+          
+          ## 技术信息
+          - 包含数字签名的更新包，支持安全的自动更新
+          - 兼容 Tauri 更新插件
+          - 保持原始文件名以确保签名验证正确
+          - 需要手动更新 config.json 中的签名和 URL 信息
         files: |
-          src-tauri/target/release/SR-Tools-v${{ steps.get-version.outputs.version }}.exe
-          SR-Tools_${{ steps.get-version.outputs.version }}_x64.msi.zip
-          latest.json
+          src-tauri/target/release/tianjg_com.exe
+          src-tauri/target/release/bundle/updater/*.zip
+          src-tauri/target/release/bundle/updater/*.zip.sig
         draft: false
         prerelease: false
 
