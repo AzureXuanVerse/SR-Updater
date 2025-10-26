@@ -59,21 +59,29 @@ jobs:
     
     - name: Setup Tauri signing key
       run: |
-        # 创建 .tauri 目录
-        New-Item -ItemType Directory -Force -Path "tools/.tauri"
-        
-        # 设置签名密钥（从 secrets 中获取）
-        echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" | Out-File -FilePath "tools/.tauri/sr.key" -Encoding utf8
-        echo "${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}" | Out-File -FilePath "tools/.tauri/sr.key.pub" -Encoding utf8
-        echo "${{ secrets.TAURI_KEY_PASSWORD }}" | Out-File -FilePath "tools/.tauri/密码.txt" -Encoding utf8
+        echo "🔑 设置 Tauri 签名密钥..."
+        echo "✅ 使用 GitHub Secrets 中的私钥进行签名"
+        echo "✅ 私钥密码已配置"
     
     - name: Build Tauri app with updater
       env:
-        TAURI_SIGNING_PRIVATE_KEY_PATH: tools/.tauri/sr.key
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
       run: |
-        npm run generate
+        echo "🔧 构建环境信息:"
+        echo "  工作目录: ${{ github.workspace }}"
+        echo "  使用 GitHub Secrets 中的私钥进行签名"
+        
+        echo "🚀 开始构建 Tauri 应用..."
         npm run tauri build
+        
+        echo "📦 检查生成的文件:"
+         if (Test-Path "src-tauri/target/release/bundle/updater") {
+           echo "✅ 更新包目录存在"
+           Get-ChildItem "src-tauri/target/release/bundle/updater" -Recurse | ForEach-Object { echo "  - $($_.Name)" }
+         } else {
+           echo "❌ 更新包目录不存在"
+         }
     
     - name: Verify build artifacts
       run: |
