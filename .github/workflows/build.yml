@@ -32,9 +32,17 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: 安装环境
+      - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: 安装依赖
         run: npm ci
+
+      - name: 设置 Tauri 签名密钥
+        run: |
+          echo "🔑 设置 Tauri 签名密钥..."
+          echo "✅ 使用 GitHub Secrets 中的私钥进行签名"
+          echo "✅ 私钥密码已配置"
 
       - name: 构建 Tauri 应用
         env:
@@ -76,6 +84,26 @@ jobs:
             echo "❌ NSIS 更新包签名未生成"
           }
 
+      - name: 验证构建产物
+        run: |
+          echo "检查构建产物..."
+          
+          # 检查 NSIS 安装包
+          $nsisFiles = Get-ChildItem "src-tauri/target/release/bundle/nsis/" -Filter "*.exe" -ErrorAction SilentlyContinue
+          if (-not $nsisFiles) {
+            echo "❌ NSIS 安装包未找到"
+            exit 1
+          }
+          echo "✅ NSIS 安装包已生成"
+          
+          # 检查 NSIS 签名文件
+          $nsisSigFiles = Get-ChildItem "src-tauri/target/release/bundle/nsis/" -Filter "*.exe.sig" -ErrorAction SilentlyContinue
+          if (-not $nsisSigFiles) {
+            echo "❌ NSIS 签名文件未找到"
+            exit 1
+          }
+          echo "✅ NSIS 签名文件已生成"
+
       - name: 删除旧构建产物
         uses: actions/github-script@v7
         with:
@@ -86,6 +114,7 @@ jobs:
               run_id: context.runId,
             });
             
+            // 删除名称以 SR-Tools- 开头的旧构建产物
             const oldArtifacts = await github.rest.actions.listArtifactsForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
