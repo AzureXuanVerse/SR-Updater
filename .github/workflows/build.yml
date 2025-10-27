@@ -19,32 +19,24 @@ jobs:
           repository: tianjg-com/SR-Tools
           token: ${{ secrets.SR_TOKEN }}
 
-      - name: Display build info
+      - name: 显示构建信息
         run: |
           echo "🔧 构建环境信息:"
           echo "🏷️ 标签: ${{ github.ref }}"
           echo "🌿 分支: ${{ github.ref_name }}"
           echo "📂 工作目录: ${{ github.workspace }}"
 
-      - name: Setup Node.js
+      - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Setup Rust
+      - name: 安装环境
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
         run: npm ci
 
-      - name: Setup Tauri signing key
-        run: |
-          echo "🔑 设置 Tauri 签名密钥..."
-          echo "✅ 使用 GitHub Secrets 中的私钥进行签名"
-          echo "✅ 私钥密码已配置"
-
-      - name: Build Tauri app with updater
+      - name: 构建 Tauri 应用
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
@@ -84,27 +76,7 @@ jobs:
             echo "❌ NSIS 更新包签名未生成"
           }
 
-      - name: 验证构建产物
-        run: |
-          echo "检查构建产物..."
-          
-          # 检查 NSIS 安装包
-          $nsisFiles = Get-ChildItem "src-tauri/target/release/bundle/nsis/" -Filter "*.exe" -ErrorAction SilentlyContinue
-          if (-not $nsisFiles) {
-            echo "❌ NSIS 安装包未找到"
-            exit 1
-          }
-          echo "✅ NSIS 安装包已生成"
-          
-          # 检查 NSIS 签名文件
-          $nsisSigFiles = Get-ChildItem "src-tauri/target/release/bundle/nsis/" -Filter "*.exe.sig" -ErrorAction SilentlyContinue
-          if (-not $nsisSigFiles) {
-            echo "❌ NSIS 签名文件未找到"
-            exit 1
-          }
-          echo "✅ NSIS 签名文件已生成"
-
-      - name: Delete old artifacts
+      - name: 删除旧构建产物
         uses: actions/github-script@v7
         with:
           script: |
@@ -114,7 +86,6 @@ jobs:
               run_id: context.runId,
             });
             
-            // 删除名称以 SR-Tools- 开头的旧构建产物
             const oldArtifacts = await github.rest.actions.listArtifactsForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -132,7 +103,7 @@ jobs:
               }
             }
 
-      - name: Upload build artifacts
+      - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
@@ -170,9 +141,9 @@ jobs:
           # 更新发布日期
           $configContent.latest.releaseDate = $CURRENT_DATETIME
 
-          # 更新下载URL
+          # 更新下载URL（使用实际的文件名，对空格进行URL编码）
           $encodedInstallerName = $installerName -replace ' ', '%20'
-          $downloadUrl = "https://github.com/${{ github.repository }}/releases/latest/download/$encodedInstallerName"
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/release-${{ github.run_number }}/$encodedInstallerName"
           $configContent.latest.platforms.windows.x86_64.url = $downloadUrl
 
           # 读取签名文件
@@ -244,7 +215,7 @@ jobs:
             exit 1
           }
 
-      - name: Create Release
+      - name: 创建发布
         id: create_release
         uses: actions/create-release@v1
         env:
@@ -257,7 +228,7 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Upload Release Assets
+      - name: 上传发布资产
         run: |
           # 查找安装包文件
           $installerFile = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
@@ -283,4 +254,4 @@ jobs:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
-          keep_minimum_runs: 1  # 只保留最近1次运行记录
+          keep_minimum_runs: 1  # 只保留最近2次运行记录
