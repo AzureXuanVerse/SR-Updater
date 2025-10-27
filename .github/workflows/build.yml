@@ -249,11 +249,7 @@ jobs:
           # 删除现有的 latest 发布（如果存在）
           gh release delete latest --repo "${{ github.repository }}" --yes || true
           # 创建新的 latest 发布
-          gh release create latest \
-            --title "Star Rail Tools Latest" \
-            --notes "## 🎮 Star Rail Tools 最新版本" \
-            --latest \
-            --repo "${{ github.repository }}"
+          gh release create latest --title "Star Rail Tools Latest" --notes "## 🎮 Star Rail Tools 最新版本" --latest --repo "${{ github.repository }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -283,4 +279,19 @@ jobs:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
-          keep_minimum_runs: 1  # 只保留最近2次运行记录
+          keep_minimum_runs: 1  # 只保留最近1次运行记录
+
+      # 清理旧的标签，只保留latest
+      - name: 清理旧标签
+        if: success() || failure()
+        run: |
+          echo "🧹 清理旧标签..."
+          # 获取所有标签，排除latest
+          $tags = gh api repos/${{ github.repository }}/tags --jq '.[].name' | Where-Object { $_ -ne "latest" }
+          foreach ($tag in $tags) {
+            echo "🗑️ 删除标签: $tag"
+            gh api --method DELETE repos/${{ github.repository }}/git/refs/tags/$tag || true
+          }
+          echo "✅ 标签清理完成，只保留latest标签"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
