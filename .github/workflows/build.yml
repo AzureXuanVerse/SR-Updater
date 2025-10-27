@@ -170,8 +170,9 @@ jobs:
           # 更新发布日期
           $configContent.latest.releaseDate = $CURRENT_DATETIME
 
-          # 更新下载URL（使用实际的文件名）
-          $downloadUrl = "https://github.com/${{ github.repository }}/releases/latest/download/$installerName"
+          # 更新下载URL
+          $encodedInstallerName = $installerName -replace ' ', '%20'
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/latest/download/$encodedInstallerName"
           $configContent.latest.platforms.windows.x86_64.url = $downloadUrl
 
           # 读取签名文件
@@ -253,15 +254,6 @@ jobs:
           release_name: Star Rail Tools Build ${{ github.run_number }}
           body: |
             ## 🎮 Star Rail Tools 构建 ${{ github.run_number }}
-            
-            ### 📦 下载
-            - **Windows 安装包**: 请查看下方的 Assets 部分下载
-            
-            ### 🔐 文件验证
-            - 安装包签名文件也在 Assets 中提供
-
-            ### ⚠️ 注意事项
-            - 建议关闭杀毒软件的实时保护以避免误报
           draft: false
           prerelease: false
 
@@ -273,12 +265,12 @@ jobs:
           
           if ($installerFile) {
             echo "📤 上传安装包: $($installerFile.Name)"
-            gh release upload "release-${{ github.run_number }}" "$($installerFile.FullName)" --clobber
+            gh release upload "release-${{ github.run_number }}" "$($installerFile.FullName)" --repo "${{ github.repository }}" --clobber
           }
           
           if ($sigFile) {
             echo "📤 上传签名文件: $($sigFile.Name)"
-            gh release upload "release-${{ github.run_number }}" "$($sigFile.FullName)" --clobber
+            gh release upload "release-${{ github.run_number }}" "$($sigFile.FullName)" --repo "${{ github.repository }}" --clobber
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
