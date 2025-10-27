@@ -19,31 +19,12 @@ jobs:
           repository: tianjg-com/SR-Tools
           token: ${{ secrets.SR_TOKEN }}
 
-      - name: Extract version from version.ts
-        id: get-version
-        run: |
-          # 从 version.ts 文件中提取版本号
-          if (Test-Path "app/config/version.ts") {
-            $versionContent = Get-Content "app/config/version.ts" -Raw
-            if ($versionContent -match "export const APP_VERSION = '([^']+)'") {
-              $version = $matches[1]
-              echo "🎯 检测到版本号: $version"
-              echo "version=$version" >> $env:GITHUB_OUTPUT
-            } else {
-              echo "⚠️ 未能从 version.ts 中提取版本号，使用默认版本"
-              echo "version=unknown" >> $env:GITHUB_OUTPUT
-            }
-          } else {
-            echo "❌ version.ts 文件不存在"
-            echo "version=unknown" >> $env:GITHUB_OUTPUT
-          }
-
       - name: Display build info
         run: |
-          echo "🚀 开始构建 SR-Tools"
-          echo "📦 版本号: ${{ steps.get-version.outputs.version }}"
-          echo "📅 构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-          echo "🖥️ 平台: Windows"
+          echo "🔧 构建环境信息:"
+          echo "🏷️ 标签: ${{ github.ref }}"
+          echo "🌿 分支: ${{ github.ref_name }}"
+          echo "📂 工作目录: ${{ github.workspace }}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -141,7 +122,7 @@ jobs:
             });
             
             for (const artifact of oldArtifacts.data.artifacts) {
-              if (artifact.name.startsWith('SR-Tools-') && artifact.name !== 'SR-Tools-${{ steps.get-version.outputs.version }}') {
+              if (artifact.name.startsWith('SR-Tools-')) {
                 console.log(`Deleting old artifact: ${artifact.name}`);
                 await github.rest.actions.deleteArtifact({
                   owner: context.repo.owner,
@@ -154,7 +135,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts-${{ steps.get-version.outputs.version }}
+          name: build-artifacts
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.exe.sig
@@ -176,16 +157,25 @@ jobs:
           # 读取当前配置
           $configContent = Get-Content "tools/config.json" -Raw | ConvertFrom-Json
 
-          # 更新版本和发布日期
-          $configContent.latest.version = "${{ steps.get-version.outputs.version }}"
+          # 查找生成的安装包文件
+          $installerFile = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installerFile) {
+            echo "❌ 未找到安装包文件"
+            exit 1
+          }
+          
+          $installerName = $installerFile.Name
+          echo "📦 找到安装包: $installerName"
+
+          # 更新发布日期
           $configContent.latest.releaseDate = $CURRENT_DATETIME
 
-          # 更新下载URL和签名
-          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/v${{ steps.get-version.outputs.version }}/Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe"
+          # 更新下载URL（使用实际的文件名）
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/latest/download/$installerName"
           $configContent.latest.platforms.windows.x86_64.url = $downloadUrl
 
           # 读取签名文件
-          $sigPath = "src-tauri/target/release/bundle/nsis/Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe.sig"
+          $sigPath = "src-tauri/target/release/bundle/nsis/$installerName.sig"
           if (Test-Path $sigPath) {
             $signature = Get-Content $sigPath -Raw
             $configContent.latest.platforms.windows.x86_64.signature = $signature.Trim()
@@ -200,7 +190,7 @@ jobs:
 
           # 显示更新信息
           echo "📋 更新信息:"
-          echo "  版本: ${{ steps.get-version.outputs.version }}"
+          echo "  安装包: $installerName"
           echo "  发布时间: $CURRENT_DATETIME"
           echo "  下载URL: $downloadUrl"
 
@@ -259,16 +249,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ steps.get-version.outputs.version }}
-          release_name: Star Rail Tools v${{ steps.get-version.outputs.version }}
+          tag_name: release-${{ github.run_number }}
+          release_name: Star Rail Tools Build ${{ github.run_number }}
           body: |
-            ## 🎮 Star Rail Tools v${{ steps.get-version.outputs.version }}
+            ## 🎮 Star Rail Tools 构建 ${{ github.run_number }}
             
             ### 📦 下载
-            - **Windows 安装包**: `Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe`
+            - **Windows 安装包**: 请查看下方的 Assets 部分下载
             
             ### 🔐 文件验证
-            - 安装包签名: `Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe.sig`
+            - 安装包签名文件也在 Assets 中提供
 
             ### ⚠️ 注意事项
             - 建议关闭杀毒软件的实时保护以避免误报
@@ -276,24 +266,22 @@ jobs:
           prerelease: false
 
       - name: Upload Release Assets
-        uses: actions/upload-release-asset@v1
+        run: |
+          # 查找安装包文件
+          $installerFile = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          $sigFile = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe.sig" | Select-Object -First 1
+          
+          if ($installerFile) {
+            echo "📤 上传安装包: $($installerFile.Name)"
+            gh release upload "release-${{ github.run_number }}" "$($installerFile.FullName)" --clobber
+          }
+          
+          if ($sigFile) {
+            echo "📤 上传签名文件: $($sigFile.Name)"
+            gh release upload "release-${{ github.run_number }}" "$($sigFile.FullName)" --clobber
+          }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: src-tauri/target/release/bundle/nsis/Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe
-          asset_name: Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload Release Signature
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: src-tauri/target/release/bundle/nsis/Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe.sig
-          asset_name: Star.Rail.Tools_${{ steps.get-version.outputs.version }}_x64-setup.exe.sig
-          asset_content_type: text/plain
 
       # 清理旧的工作流运行记录
       - name: 清理工作流运行历史
