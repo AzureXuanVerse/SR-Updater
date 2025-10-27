@@ -170,9 +170,8 @@ jobs:
           # 更新发布日期
           $configContent.latest.releaseDate = $CURRENT_DATETIME
 
-          # 更新下载URL（使用实际的文件名，对空格进行URL编码）
-          $encodedInstallerName = $installerName -replace ' ', '%20'
-          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/release-${{ github.run_number }}/$encodedInstallerName"
+          # 更新下载URL（使用实际的文件名）
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/latest/download/$installerName"
           $configContent.latest.platforms.windows.x86_64.url = $downloadUrl
 
           # 读取签名文件
@@ -245,17 +244,18 @@ jobs:
           }
 
       - name: 创建发布
-        id: create_release
-        uses: actions/create-release@v1
+        run: |
+          echo "🚀 创建 GitHub 发布..."
+          # 删除现有的 latest 发布（如果存在）
+          gh release delete latest --repo "${{ github.repository }}" --yes || true
+          # 创建新的 latest 发布
+          gh release create latest \
+            --title "Star Rail Tools Latest" \
+            --notes "## 🎮 Star Rail Tools 最新版本" \
+            --latest \
+            --repo "${{ github.repository }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: release-${{ github.run_number }}
-          release_name: Star Rail Tools Build ${{ github.run_number }}
-          body: |
-            ## 🎮 Star Rail Tools 构建 ${{ github.run_number }}
-          draft: false
-          prerelease: false
 
       - name: 上传发布资产
         run: |
@@ -265,12 +265,12 @@ jobs:
           
           if ($installerFile) {
             echo "📤 上传安装包: $($installerFile.Name)"
-            gh release upload "release-${{ github.run_number }}" "$($installerFile.FullName)" --repo "${{ github.repository }}" --clobber
+            gh release upload latest "$($installerFile.FullName)" --repo "${{ github.repository }}" --clobber
           }
           
           if ($sigFile) {
             echo "📤 上传签名文件: $($sigFile.Name)"
-            gh release upload "release-${{ github.run_number }}" "$($sigFile.FullName)" --repo "${{ github.repository }}" --clobber
+            gh release upload latest "$($sigFile.FullName)" --repo "${{ github.repository }}" --clobber
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
