@@ -15,7 +15,7 @@ jobs:
       - name: Checkout private repository
         uses: actions/checkout@v4
         with:
-          repository: SR-Tools
+          repository: AzureXuanVerse/SR-Tools
           token: ${{ secrets.SR_TOKEN }}
 
       - name: Setup Node.js and Rust
