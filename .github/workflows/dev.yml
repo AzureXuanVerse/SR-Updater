@@ -1,0 +1,90 @@
+name: Build Tauri from Private Repository (Debug Mode)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-tauri-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout private repository
+        uses: actions/checkout@v4
+        with:
+          repository: AzureXuanVerse/SR-Tools
+          token: ${{ secrets.SR_TOKEN }}
+
+      - name: Setup Node.js and Rust
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri application
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        run: |
+          npm run tauri build
+          
+          # Verify build artifacts
+          if (-not (Test-Path "src-tauri/target/release/bundle/nsis/*.exe")) {
+            echo "❌ NSIS installer not found"
+            exit 1
+          }
+          if (-not (Test-Path "src-tauri/target/release/bundle/nsis/*.exe.sig")) {
+            echo "❌ NSIS signature not found"
+            exit 1
+          }
+
+      - name: Clean old artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const oldArtifacts = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            for (const artifact of oldArtifacts.data.artifacts) {
+              if (artifact.name.startsWith('build-artifacts')) {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id,
+                });
+              }
+            }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-debug
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
+          retention-days: 30
+
+      - name: Display build summary
+        run: |
+          echo "✅ Build completed successfully!"
+          echo "📦 Artifacts have been uploaded as 'build-artifacts-debug'"
+          echo ""
+          echo "📁 Build output:"
+          Get-ChildItem "src-tauri/target/release/bundle/nsis/" | Format-Table Name, Length, LastWriteTime
+          echo ""
+          echo "📥 To download artifacts:"
+          echo "1. Go to this workflow run"
+          echo "2. Scroll to the bottom of the page"
+          echo "3. Click on 'build-artifacts-debug' in the Artifacts section"
